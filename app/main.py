@@ -1,7 +1,8 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from . import redis_client
+from .websocket_manager import manager
 
 app = FastAPI()
 
@@ -14,13 +15,17 @@ def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    # Send last 50 messages
-    messages = redis_client.lrange("chat_messages", -50, -1)
-    for message in messages:
-        await websocket.send_text(message)
-    while True:
-        data = await websocket.receive_text()
-        redis_client.rpush("chat_messages", data)
-        redis_client.ltrim("chat_messages", -50, -1)
-        await websocket.send_text(data)
+    await manager.connect(websocket)
+    try:
+        # Send last 50 messages
+        messages = redis_client.lrange("chat_messages", -50, -1)
+        for message in messages:
+            await websocket.send_text(message)
+        while True:
+            data = await websocket.receive_text()
+            redis_client.rpush("chat_messages", data)
+            redis_client.ltrim("chat_messages", -50, -1)
+            await manager.broadcast(data)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        await manager.broadcast("A user has left the chat.")
