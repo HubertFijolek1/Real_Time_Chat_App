@@ -6,6 +6,7 @@ const sendButton = document.getElementById("send-button");
 
 ws.onmessage = function(event) {
     const msg = document.createElement("div");
+    msg.classList.add("message");
     msg.textContent = event.data;
     messages.appendChild(msg);
     messages.scrollTop = messages.scrollHeight;
@@ -18,3 +19,9 @@ sendButton.onclick = function() {
         input.value = "";
     }
 };
+
+input.addEventListener("keypress", function(event) {
+    if (event.key === "Enter") {
+        sendButton.click();
+    }
+});
