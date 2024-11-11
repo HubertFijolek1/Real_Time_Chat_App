@@ -15,10 +15,14 @@ from sqlalchemy.orm import Session
 from typing import List
 import asyncio
 
+from fastapi.security import OAuth2PasswordRequestForm
 from . import models, schemas
 from .database import SessionLocal, engine
 from .auth import authenticate_user, create_access_token, get_current_user
-from . import redis, init_redis_pool
+from . import redis_client, init_redis_pool
+import json
+
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +31,6 @@ logger = logging.getLogger(__name__)
 # Create the FastAPI app
 app = FastAPI()
 
-# Startup and shutdown events
 @app.on_event("startup")
 async def startup():
     await init_redis_pool()
@@ -35,8 +38,7 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    redis.close()
-    await redis.wait_closed()
+    await redis_client.close()
 
 # Dependency to get DB session
 def get_db():
@@ -174,18 +176,16 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
 
         # Subscribe to Redis channel
         redis_channel = f"chat_room_{chat_room_id}"
-        pubsub = await redis.subscribe(redis_channel)
-        channel = pubsub[0]
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(redis_channel)
 
         async def send_messages():
             while True:
-                try:
-                    message = await channel.get_json()
-                    if message:
-                        await websocket.send_json(message)
-                except Exception as e:
-                    print(f"Error sending message: {e}")
-                    break
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message:
+                    data = json.loads(message['data'])
+                    await websocket.send_json(data)
+                await asyncio.sleep(0.01)  # Prevent tight loop
 
         send_task = asyncio.create_task(send_messages())
 
