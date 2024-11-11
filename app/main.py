@@ -119,10 +119,13 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                     "is_attachment": is_attachment,
                     "message_id": message.id
                 }, chat_room_id)
+            elif message_type == "read_receipt":
+                message_id = data.get("message_id")
+                read_status = models.MessageReadStatus(user_id=current_user.id, message_id=message_id)
+                db.merge(read_status)
+                db.commit()
             elif message_type == "typing":
-                # Handle typing indicators (optional)
                 pass
-            # Add handling for other message types if needed
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         logger.info(f"{current_user.username} disconnected")
