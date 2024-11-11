@@ -1,6 +1,6 @@
 import os
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect,Depends, HTTPException, status,Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect,Depends, HTTPException, status,Query, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -125,3 +125,10 @@ def join_chat_room(chat_room_id: int, db: Session = Depends(get_db), current_use
     db.add(new_membership)
     db.commit()
     return {"message": "Joined chat room successfully"}
+
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)):
+    file_location = f"uploads/{file.filename}"
+    with open(file_location, "wb") as buffer:
+        buffer.write(await file.read())
+    return {"file_url": file_location}
