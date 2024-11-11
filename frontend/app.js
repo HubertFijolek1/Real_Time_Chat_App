@@ -1,5 +1,3 @@
-// frontend/app.js
-
 let token = "";
 let currentChatRoomId = 1; // For simplicity, assume chat room ID is 1.
 

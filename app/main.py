@@ -1,5 +1,3 @@
-# app/main.py
-
 import os
 import logging
 from datetime import timedelta

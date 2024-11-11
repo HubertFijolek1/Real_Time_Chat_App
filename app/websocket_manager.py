@@ -1,5 +1,3 @@
-# app/websocket_manager.py
-
 from fastapi import WebSocket
 from typing import Dict, Set, DefaultDict
 from collections import defaultdict
