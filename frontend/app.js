@@ -11,9 +11,15 @@ const inputContainer = document.getElementById("input-container");
 const fileInput = document.getElementById("file-input");
 const passwordInput = document.getElementById("password-input");
 const typingIndicator = document.getElementById("typing-indicator");
+const emojiPicker = document.getElementById("emoji-picker");
+
 
 let typingTimeout;
 let username = "";
+
+emojiPicker.addEventListener('emoji-click', event => {
+    input.value += event.detail.unicode;
+});
 
 usernameButton.onclick = async function() {
     const enteredUsername = usernameInput.value.trim();
