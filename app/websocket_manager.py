@@ -20,5 +20,10 @@ class ConnectionManager:
         for connection in self.chat_rooms[chat_room_id]:
             await connection.send_text(message)
 
+    async def handle_typing(self, username: str, chat_room_id: int):
+        message = {"type": "typing", "username": username}
+        for connection in self.chat_rooms[chat_room_id]:
+            await connection.send_json(message)
+
 # Instantiate a single ConnectionManager to be used across the application
 manager = ConnectionManager()
