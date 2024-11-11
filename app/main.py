@@ -93,3 +93,18 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/chat_rooms/", response_model=schemas.ChatRoom)
+def create_chat_room(chat_room: schemas.ChatRoomCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    db_chat_room = db.query(models.ChatRoom).filter(models.ChatRoom.name == chat_room.name).first()
+    if db_chat_room:
+        raise HTTPException(status_code=400, detail="Chat room already exists")
+    new_chat_room = models.ChatRoom(name=chat_room.name, is_private=chat_room.is_private)
+    db.add(new_chat_room)
+    db.commit()
+    db.refresh(new_chat_room)
+    # Add current user as a member
+    membership = models.Membership(user_id=current_user.id, chat_room_id=new_chat_room.id)
+    db.add(membership)
+    db.commit()
+    return new_chat_room

@@ -15,3 +15,16 @@ class User(UserBase):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class ChatRoomBase(BaseModel):
+    name: str
+    is_private: bool = False
+
+class ChatRoomCreate(ChatRoomBase):
+    pass
+
+class ChatRoom(ChatRoomBase):
+    id: int
+
+    class Config:
+        orm_mode = True
