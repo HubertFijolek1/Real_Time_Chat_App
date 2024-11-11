@@ -125,7 +125,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                 db.merge(read_status)
                 db.commit()
             elif message_type == "typing":
-                pass
+                await manager.broadcast({
+                    "type": "typing",
+                    "username": current_user.username
+                }, chat_room_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         logger.info(f"{current_user.username} disconnected")

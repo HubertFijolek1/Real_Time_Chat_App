@@ -10,7 +10,9 @@ const usernameContainer = document.getElementById("username-container");
 const inputContainer = document.getElementById("input-container");
 const fileInput = document.getElementById("file-input");
 const passwordInput = document.getElementById("password-input");
+const typingIndicator = document.getElementById("typing-indicator");
 
+let typingTimeout;
 let username = "";
 
 usernameButton.onclick = async function() {
@@ -87,7 +89,15 @@ usernameButton.onclick = async function() {
                     chat_room_id: currentChatRoomId
                     }));
                 }
-                // Handle other message types
+                if (data.type === "typing") {
+                    typingIndicator.textContent = `${data.username} is typing...`;
+                    clearTimeout(typingTimeout);
+                    typingTimeout = setTimeout(() => {
+                        typingIndicator.textContent = "";
+                    }, 3000);
+                    } else {
+                        // Existing message handling code
+                    }
             };
 
             sendButton.onclick = function() {
@@ -104,8 +114,11 @@ usernameButton.onclick = async function() {
             };
 
             input.addEventListener("keypress", function(event) {
-                if (event.key === "Enter") {
-                    sendButton.click();
+                if (event.key !== "Enter") {
+                    ws.send(JSON.stringify({
+                        type: "typing",
+                        chat_room_id: currentChatRoomId
+                    }));
                 }
             });
 
