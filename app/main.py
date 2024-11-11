@@ -139,3 +139,11 @@ async def upload_file(file: UploadFile = File(...), current_user: models.User = 
     with open(file_location, "wb") as buffer:
         buffer.write(await file.read())
     return {"file_url": f"/{file_location}"}
+
+@app.get("/chat_rooms/{chat_room_id}/search")
+def search_messages(chat_room_id: int, query: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    messages = db.query(models.Message).filter(
+        models.Message.chat_room_id == chat_room_id,
+        models.Message.content.contains(query)
+    ).all()
+    return messages
