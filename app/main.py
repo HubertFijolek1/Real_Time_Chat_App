@@ -108,3 +108,16 @@ def create_chat_room(chat_room: schemas.ChatRoomCreate, db: Session = Depends(ge
     db.add(membership)
     db.commit()
     return new_chat_room
+
+@app.post("/chat_rooms/{chat_room_id}/join")
+def join_chat_room(chat_room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    chat_room = db.query(models.ChatRoom).filter(models.ChatRoom.id == chat_room_id).first()
+    if not chat_room:
+        raise HTTPException(status_code=404, detail="Chat room not found")
+    membership = db.query(models.Membership).filter_by(user_id=current_user.id, chat_room_id=chat_room_id).first()
+    if membership:
+        raise HTTPException(status_code=400, detail="Already a member of this chat room")
+    new_membership = models.Membership(user_id=current_user.id, chat_room_id=chat_room_id)
+    db.add(new_membership)
+    db.commit()
+    return {"message": "Joined chat room successfully"}
