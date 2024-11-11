@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import List
+import asyncio
 
-from . import models, schemas
+from . import models, schemas, redis, init_redis_pool
 from .database import SessionLocal, engine
 from .auth import authenticate_user, create_access_token, get_current_user
 from .websocket_manager import manager
@@ -29,6 +30,45 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
+
+@app.on_event("startup")
+async def startup():
+    await init_redis_pool()
+    models.Base.metadata.create_all(bind=engine)
+
+@app.on_event("shutdown")
+async def shutdown():
+    redis.close()
+    await redis.wait_closed()
+
+redis_channel = f"chat_room_{chat_room_id}"
+pubsub = await redis.subscribe(redis_channel)
+channel = pubsub[0]
+
+async def send_messages():
+    while True:
+        try:
+            message = await channel.get_json()
+            if message:
+                await websocket.send_json(message)
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            break
+
+send_task = asyncio.create_task(send_messages())
+
+# When handling messages
+if message_type == "chat":
+    # Existing code to save message
+    msg = {
+        "type": "chat",
+        "content": content,
+        "username": current_user.username,
+        "is_attachment": is_attachment,
+        "message_id": message.id,
+    }
+    # Publish to Redis
+    await redis.publish_json(redis_channel, msg)
 
 # Dependency to get DB session
 def get_db():
