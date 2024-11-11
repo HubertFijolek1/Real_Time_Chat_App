@@ -116,7 +116,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                     "type": "chat",
                     "content": content,
                     "username": current_user.username,
-                    "is_attachment": is_attachment
+                    "is_attachment": is_attachment,
+                    "message_id": message.id
                 }, chat_room_id)
             elif message_type == "typing":
                 # Handle typing indicators (optional)
