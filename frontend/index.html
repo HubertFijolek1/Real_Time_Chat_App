@@ -1,9 +1,12 @@
+<!-- frontend/index.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Real-Time Chat App</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Emoji Picker CSS -->
     <link rel="stylesheet" href="https://unpkg.com/emoji-picker-element@^1/index.css">
 </head>
 <body>
@@ -18,15 +21,10 @@
             <input type="text" id="message-input" placeholder="Type a message...">
             <button id="send-button">Send</button>
             <input type="file" id="file-input">
+            <emoji-picker id="emoji-picker"></emoji-picker>
         </div>
         <div id="typing-indicator"></div>
-        <div class="message">
-            <span class="message-content"></span>
-            <span class="read-receipt">Read</span>
-        </div>
-        <emoji-picker id="emoji-picker"></emoji-picker>
     </div>
     <script src="app.js"></script>
-
 </body>
 </html>

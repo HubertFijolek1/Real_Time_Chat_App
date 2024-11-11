@@ -5,21 +5,16 @@ const messages = document.getElementById("messages");
 const input = document.getElementById("message-input");
 const sendButton = document.getElementById("send-button");
 const usernameInput = document.getElementById("username-input");
+const passwordInput = document.getElementById("password-input");
 const usernameButton = document.getElementById("username-button");
 const usernameContainer = document.getElementById("username-container");
 const inputContainer = document.getElementById("input-container");
 const fileInput = document.getElementById("file-input");
-const passwordInput = document.getElementById("password-input");
-const typingIndicator = document.getElementById("typing-indicator");
 const emojiPicker = document.getElementById("emoji-picker");
+const typingIndicator = document.getElementById("typing-indicator");
 
-
-let typingTimeout;
 let username = "";
-
-emojiPicker.addEventListener('emoji-click', event => {
-    input.value += event.detail.unicode;
-});
+let ws;
 
 usernameButton.onclick = async function() {
     const enteredUsername = usernameInput.value.trim();
@@ -59,11 +54,11 @@ usernameButton.onclick = async function() {
 
             usernameContainer.style.display = "none";
             messages.style.display = "block";
-            inputContainer.style.display = "block";
+            inputContainer.style.display = "flex";
 
             // Now connect to WebSocket
-            const wsUrl = `ws://localhost:8000/ws/${currentChatRoomId}?token=${token}`;
-            const ws = new WebSocket(wsUrl);
+            const wsUrl = `ws://${window.location.host}/ws/${currentChatRoomId}?token=${token}`;
+            ws = new WebSocket(wsUrl);
 
             ws.onopen = function() {
                 ws.send(JSON.stringify({type: "join", content: `${username} has joined the chat.`}));
@@ -74,7 +69,6 @@ usernameButton.onclick = async function() {
                 if (data.type === "chat") {
                     const msg = document.createElement("div");
                     msg.classList.add("message");
-
                     if (data.is_attachment) {
                         const text = document.createElement("span");
                         text.textContent = `${data.username} sent a file: `;
@@ -87,23 +81,51 @@ usernameButton.onclick = async function() {
                     } else {
                         msg.textContent = `${data.username}: ${data.content}`;
                     }
+                    msg.dataset.messageId = data.message_id;
+                    // Add reactions display
+                    const reactionsDiv = document.createElement("div");
+                    reactionsDiv.classList.add("reactions");
+                    msg.appendChild(reactionsDiv);
+
+                    // Add reaction buttons
+                    const reactionButtons = ['😊', '👍', '❤️'].map(emoji => {
+                        const button = document.createElement("button");
+                        button.classList.add("reaction-button");
+                        button.textContent = emoji;
+                        button.onclick = () => {
+                            ws.send(JSON.stringify({
+                                type: "reaction",
+                                message_id: data.message_id,
+                                reaction_type: emoji,
+                                chat_room_id: currentChatRoomId
+                            }));
+                        };
+                        return button;
+                    });
+                    reactionButtons.forEach(button => reactionsDiv.appendChild(button));
+
                     messages.appendChild(msg);
                     messages.scrollTop = messages.scrollHeight;
-                    ws.send(JSON.stringify({
-                    type: "read_receipt",
-                    message_id: data.message_id,
-                    chat_room_id: currentChatRoomId
-                    }));
-                }
-                if (data.type === "typing") {
+                } else if (data.type === "typing") {
                     typingIndicator.textContent = `${data.username} is typing...`;
                     clearTimeout(typingTimeout);
                     typingTimeout = setTimeout(() => {
                         typingIndicator.textContent = "";
                     }, 3000);
-                    } else {
-                        // Existing message handling code
+                } else if (data.type === "reaction") {
+                    // Update message with new reaction
+                    const messageElements = messages.getElementsByClassName("message");
+                    for (let msgElement of messageElements) {
+                        if (msgElement.dataset.messageId == data.message_id) {
+                            const reactionsDiv = msgElement.querySelector(".reactions");
+                            const reactionSpan = document.createElement("span");
+                            reactionSpan.textContent = `${data.username} reacted with ${data.reaction_type}`;
+                            reactionsDiv.appendChild(reactionSpan);
+                            break;
+                        }
                     }
+                }
+                // Handle other message types
             };
 
             sendButton.onclick = function() {
@@ -120,7 +142,9 @@ usernameButton.onclick = async function() {
             };
 
             input.addEventListener("keypress", function(event) {
-                if (event.key !== "Enter") {
+                if (event.key === "Enter") {
+                    sendButton.click();
+                } else {
                     ws.send(JSON.stringify({
                         type: "typing",
                         chat_room_id: currentChatRoomId
@@ -147,8 +171,15 @@ usernameButton.onclick = async function() {
                     chat_room_id: currentChatRoomId
                 }));
             };
+
+            // Emoji picker handling
+            emojiPicker.addEventListener('emoji-click', event => {
+                input.value += event.detail.unicode;
+            });
         } else {
             alert("Failed to login or register.");
         }
     }
 };
+
+let typingTimeout;

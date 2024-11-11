@@ -1,19 +1,24 @@
 import os
 import logging
-from datetime import timedelta
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends, HTTPException, status, UploadFile, File
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+)
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from fastapi.security import OAuth2PasswordRequestForm
 from typing import List
 import asyncio
 
-from . import models, schemas, redis, init_redis_pool
+from . import models, schemas
 from .database import SessionLocal, engine
 from .auth import authenticate_user, create_access_token, get_current_user
-from .websocket_manager import manager
+from . import redis, init_redis_pool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,15 +27,7 @@ logger = logging.getLogger(__name__)
 # Create the FastAPI app
 app = FastAPI()
 
-# Mount static files (frontend directory)
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
-
-# Mount uploads directory to serve uploaded files
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
-
+# Startup and shutdown events
 @app.on_event("startup")
 async def startup():
     await init_redis_pool()
@@ -40,35 +37,6 @@ async def startup():
 async def shutdown():
     redis.close()
     await redis.wait_closed()
-
-redis_channel = f"chat_room_{chat_room_id}"
-pubsub = await redis.subscribe(redis_channel)
-channel = pubsub[0]
-
-async def send_messages():
-    while True:
-        try:
-            message = await channel.get_json()
-            if message:
-                await websocket.send_json(message)
-        except Exception as e:
-            print(f"Error sending message: {e}")
-            break
-
-send_task = asyncio.create_task(send_messages())
-
-# When handling messages
-if message_type == "chat":
-    # Existing code to save message
-    msg = {
-        "type": "chat",
-        "content": content,
-        "username": current_user.username,
-        "is_attachment": is_attachment,
-        "message_id": message.id,
-    }
-    # Publish to Redis
-    await redis.publish_json(redis_channel, msg)
 
 # Dependency to get DB session
 def get_db():
@@ -102,7 +70,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 # Endpoint to create chat rooms
 @app.post("/chat_rooms/", response_model=schemas.ChatRoom)
-def create_chat_room(chat_room: schemas.ChatRoomCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def create_chat_room(
+    chat_room: schemas.ChatRoomCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     db_chat_room = db.query(models.ChatRoom).filter(models.ChatRoom.name == chat_room.name).first()
     if db_chat_room:
         raise HTTPException(status_code=400, detail="Chat room already exists")
@@ -118,17 +90,70 @@ def create_chat_room(chat_room: schemas.ChatRoomCreate, db: Session = Depends(ge
 
 # Endpoint to join chat rooms
 @app.post("/chat_rooms/{chat_room_id}/join")
-def join_chat_room(chat_room_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def join_chat_room(
+    chat_room_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     chat_room = db.query(models.ChatRoom).filter(models.ChatRoom.id == chat_room_id).first()
     if not chat_room:
         raise HTTPException(status_code=404, detail="Chat room not found")
-    membership = db.query(models.Membership).filter_by(user_id=current_user.id, chat_room_id=chat_room_id).first()
+    membership = (
+        db.query(models.Membership)
+        .filter_by(user_id=current_user.id, chat_room_id=chat_room_id)
+        .first()
+    )
     if membership:
         raise HTTPException(status_code=400, detail="Already a member of this chat room")
     new_membership = models.Membership(user_id=current_user.id, chat_room_id=chat_room_id)
     db.add(new_membership)
     db.commit()
     return {"message": "Joined chat room successfully"}
+
+# Endpoint to search messages
+@app.get("/chat_rooms/{chat_room_id}/search", response_model=List[schemas.Message])
+def search_messages(
+    chat_room_id: int,
+    query: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    messages = (
+        db.query(models.Message)
+        .filter(
+            models.Message.chat_room_id == chat_room_id,
+            models.Message.content.contains(query),
+        )
+        .all()
+    )
+    return messages
+
+# Endpoint to delete a message
+@app.delete("/messages/{message_id}")
+def delete_message(
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    message = db.query(models.Message).filter(models.Message.id == message_id).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this message")
+    db.delete(message)
+    db.commit()
+    return {"message": "Message deleted successfully"}
+
+# File upload endpoint
+@app.post("/upload/")
+async def upload_file(
+    file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)
+):
+    file_location = f"uploads/{file.filename}"
+    os.makedirs(os.path.dirname(file_location), exist_ok=True)
+    with open(file_location, "wb") as buffer:
+        buffer.write(await file.read())
+    return {"file_url": f"/{file_location}"}
 
 # WebSocket endpoint
 @app.websocket("/ws/{chat_room_id}")
@@ -138,86 +163,91 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
         db = SessionLocal()
         current_user = await get_current_user(token=token, db=db)
         # Check if user is a member of the chat room
-        membership = db.query(models.Membership).filter_by(user_id=current_user.id, chat_room_id=chat_room_id).first()
+        membership = (
+            db.query(models.Membership)
+            .filter_by(user_id=current_user.id, chat_room_id=chat_room_id)
+            .first()
+        )
         if not membership:
             await websocket.close(code=1008, reason="Not a member of the chat room")
             return
-        await manager.connect(websocket, current_user.username, chat_room_id)
+
+        # Subscribe to Redis channel
+        redis_channel = f"chat_room_{chat_room_id}"
+        pubsub = await redis.subscribe(redis_channel)
+        channel = pubsub[0]
+
+        async def send_messages():
+            while True:
+                try:
+                    message = await channel.get_json()
+                    if message:
+                        await websocket.send_json(message)
+                except Exception as e:
+                    print(f"Error sending message: {e}")
+                    break
+
+        send_task = asyncio.create_task(send_messages())
+
         while True:
             data = await websocket.receive_json()
             message_type = data.get("type")
             if message_type == "chat":
                 is_attachment = data.get("is_attachment", False)
-                content = data.get('content')
-                message = models.Message(content=content, user_id=current_user.id, chat_room_id=chat_room_id, is_attachment=is_attachment)
+                content = data.get("content")
+                message = models.Message(
+                    content=content,
+                    user_id=current_user.id,
+                    chat_room_id=chat_room_id,
+                    is_attachment=is_attachment,
+                )
                 db.add(message)
                 db.commit()
-                await manager.broadcast({
+                msg = {
                     "type": "chat",
                     "content": content,
                     "username": current_user.username,
                     "is_attachment": is_attachment,
-                    "message_id": message.id
-                }, chat_room_id)
-            elif message_type == "read_receipt":
-                message_id = data.get("message_id")
-                read_status = models.MessageReadStatus(user_id=current_user.id, message_id=message_id)
-                db.merge(read_status)
-                db.commit()
+                    "message_id": message.id,
+                }
+                # Publish the message to Redis
+                await redis.publish_json(redis_channel, msg)
             elif message_type == "typing":
-                await manager.broadcast({
-                    "type": "typing",
-                    "username": current_user.username
-                }, chat_room_id)
+                # Broadcast typing indicator
+                msg = {"type": "typing", "username": current_user.username}
+                await redis.publish_json(redis_channel, msg)
             elif message_type == "reaction":
+                # Handle reactions
                 reaction_type = data.get("reaction_type")
                 message_id = data.get("message_id")
                 reaction = models.Reaction(
-                    user_id=current_user.id,
-                    message_id=message_id,
-                    reaction_type=reaction_type
+                    user_id=current_user.id, message_id=message_id, reaction_type=reaction_type
                 )
                 db.merge(reaction)  # Use merge to handle upserts
                 db.commit()
-                await manager.broadcast({
+                msg = {
                     "type": "reaction",
                     "message_id": message_id,
                     "reaction_type": reaction_type,
-                    "username": current_user.username
-                }, chat_room_id)
+                    "username": current_user.username,
+                }
+                await redis.publish_json(redis_channel, msg)
+            elif message_type == "read_receipt":
+                # Handle read receipts
+                message_id = data.get("message_id")
+                read_status = models.MessageReadStatus(
+                    user_id=current_user.id, message_id=message_id
+                )
+                db.merge(read_status)
+                db.commit()
+                # Optionally notify the sender
+            # Add handling for other message types if needed
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info(f"{current_user.username} disconnected")
+        send_task.cancel()
+        await redis.unsubscribe(redis_channel)
+        print(f"Client disconnected")
     except Exception as e:
         logger.error(f"Error: {e}")
         await websocket.close()
     finally:
         db.close()
-
-# File upload endpoint
-@app.post("/upload/")
-async def upload_file(file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)):
-    file_location = f"uploads/{file.filename}"
-    os.makedirs(os.path.dirname(file_location), exist_ok=True)
-    with open(file_location, "wb") as buffer:
-        buffer.write(await file.read())
-    return {"file_url": f"/{file_location}"}
-
-@app.get("/chat_rooms/{chat_room_id}/search")
-def search_messages(chat_room_id: int, query: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    messages = db.query(models.Message).filter(
-        models.Message.chat_room_id == chat_room_id,
-        models.Message.content.contains(query)
-    ).all()
-    return messages
-
-@app.delete("/messages/{message_id}")
-def delete_message(message_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    message = db.query(models.Message).filter(models.Message.id == message_id).first()
-    if not message:
-        raise HTTPException(status_code=404, detail="Message not found")
-    if message.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this message")
-    db.delete(message)
-    db.commit()
-    return {"message": "Message deleted successfully"}

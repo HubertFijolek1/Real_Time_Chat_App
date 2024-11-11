@@ -2,16 +2,32 @@ version: '3.8'
 
 services:
   web:
-    build:
-      context: ../app
-      dockerfile: Dockerfile
+    build: .
     ports:
       - "8000:8000"
     depends_on:
       - redis
+      - db
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/chat_app_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SECRET_KEY=my-secret-key
     volumes:
-      - ../app:/app
+      - .:/app
+      - ./uploads:/app/uploads
+
   redis:
-    image: "redis:6-alpine"
-    ports:
-      - "6379:6379"
+    image: redis:alpine
+
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chat_app_db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:

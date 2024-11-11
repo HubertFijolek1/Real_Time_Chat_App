@@ -1,4 +1,12 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, func
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    DateTime,
+    Boolean,
+    func,
+)
 from sqlalchemy.orm import relationship
 from passlib.context import CryptContext
 from .database import Base
@@ -14,8 +22,8 @@ class User(Base):
 
     messages = relationship("Message", back_populates="user")
     memberships = relationship("Membership", back_populates="user")
-    read_statuses = relationship("MessageReadStatus", back_populates="user")
     reactions = relationship("Reaction", back_populates="user")
+    read_statuses = relationship("MessageReadStatus", back_populates="user")
 
     def set_password(self, password):
         self.password_hash = pwd_context.hash(password)
@@ -42,7 +50,6 @@ class Membership(Base):
 
     user = relationship("User", back_populates="memberships")
     chat_room = relationship("ChatRoom", back_populates="memberships")
-    read_statuses = relationship("MessageReadStatus", back_populates="message")
 
 class Message(Base):
     __tablename__ = 'messages'
@@ -56,18 +63,8 @@ class Message(Base):
 
     user = relationship("User", back_populates="messages")
     chat_room = relationship("ChatRoom", back_populates="messages")
-    read_statuses = relationship("MessageReadStatus", back_populates="message")
     reactions = relationship("Reaction", back_populates="message")
-
-class MessageReadStatus(Base):
-    __tablename__ = 'message_read_status'
-
-    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
-    message_id = Column(Integer, ForeignKey('messages.id'), primary_key=True)
-    read_at = Column(DateTime, default=func.now())
-
-    user = relationship("User", back_populates="read_statuses")
-    message = relationship("Message", back_populates="read_statuses")
+    read_statuses = relationship("MessageReadStatus", back_populates="message")
 
 class Reaction(Base):
     __tablename__ = 'reactions'
@@ -78,3 +75,13 @@ class Reaction(Base):
 
     user = relationship("User", back_populates="reactions")
     message = relationship("Message", back_populates="reactions")
+
+class MessageReadStatus(Base):
+    __tablename__ = 'message_read_status'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    message_id = Column(Integer, ForeignKey('messages.id'), primary_key=True)
+    read_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", back_populates="read_statuses")
+    message = relationship("Message", back_populates="read_statuses")
