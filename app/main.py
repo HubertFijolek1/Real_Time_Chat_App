@@ -58,11 +58,20 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
         db = SessionLocal()
         current_user = await get_current_user(token=token, db=db)
         await manager.connect(websocket, current_user.username)
-        # Rest of the code...
+        while True:
+            data = await websocket.receive_json()
+            content = data.get("content")
+            chat_room_id = data.get("chat_room_id")
+            message = models.Message(content=content, user_id=current_user.id, chat_room_id=chat_room_id)
+            db.add(message)
+            db.commit()
+            await manager.broadcast(message.content, chat_room_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
         await websocket.close()
+    finally:
+        db.close()
 
 
 @app.post("/users/", response_model=schemas.User)
