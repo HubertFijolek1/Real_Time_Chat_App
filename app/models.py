@@ -46,3 +46,13 @@ class ChatRoom(Base):
 
     messages = relationship("Message", back_populates="chat_room")
     memberships = relationship("Membership", back_populates="chat_room")
+
+class Membership(Base):
+    __tablename__ = 'memberships'
+
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    chat_room_id = Column(Integer, ForeignKey('chat_rooms.id'), primary_key=True)
+    joined_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", back_populates="memberships")
+    chat_room = relationship("ChatRoom", back_populates="memberships")
