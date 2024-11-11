@@ -1,6 +1,6 @@
 from .database import Base
 from passlib.context import CryptContext
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func, Boolean
 from sqlalchemy.orm import relationship
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -36,3 +36,13 @@ class Message(Base):
 
     user = relationship("User", back_populates="messages")
     chat_room = relationship("ChatRoom", back_populates="messages")
+
+class ChatRoom(Base):
+    __tablename__ = 'chat_rooms'
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    is_private = Column(Boolean, default=False)
+
+    messages = relationship("Message", back_populates="chat_room")
+    memberships = relationship("Membership", back_populates="chat_room")
