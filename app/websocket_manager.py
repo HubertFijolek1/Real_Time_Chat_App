@@ -1,5 +1,5 @@
 from fastapi import WebSocket
-from typing import List
+from typing import List, Dict
 
 class ConnectionManager:
     """
@@ -7,30 +7,13 @@ class ConnectionManager:
     """
 
     def __init__(self):
-        """
-        Initialize the ConnectionManager with an empty list of active connections.
-        """
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: Dict[WebSocket, str] = {}
 
-    async def connect(self, websocket: WebSocket):
-        """
-        Accept and register a new WebSocket connection.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection to accept and add.
-        """
-        await websocket.accept()
-        self.active_connections.append(websocket)
+    async def connect(self, websocket: WebSocket, username: str):
+        self.active_connections[websocket] = username
 
     def disconnect(self, websocket: WebSocket):
-        """
-        Remove a WebSocket connection from the active connections list.
-
-        Args:
-            websocket (WebSocket): The WebSocket connection to remove.
-        """
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+        self.active_connections.pop(websocket, None)
 
     async def broadcast(self, message: str):
         """
