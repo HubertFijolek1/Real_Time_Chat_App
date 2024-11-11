@@ -9,20 +9,19 @@ const usernameButton = document.getElementById("username-button");
 const usernameContainer = document.getElementById("username-container");
 const inputContainer = document.getElementById("input-container");
 const fileInput = document.getElementById("file-input");
+const passwordInput = document.getElementById("password-input");
 
 let username = "";
 
 usernameButton.onclick = async function() {
     const enteredUsername = usernameInput.value.trim();
-    if (enteredUsername) {
+    const enteredPassword = passwordInput.value.trim();
+    if (enteredUsername && enteredPassword) {
         username = enteredUsername;
-        // For simplicity, we will attempt to log in, and if user does not exist, we will register.
-        // In production, you should have separate login and registration forms.
-
         // Attempt to login
         const formData = new URLSearchParams();
         formData.append('username', username);
-        formData.append('password', 'password'); // Using a default password for all users
+        formData.append('password', enteredPassword);
 
         let response = await fetch('/token', {
             method: 'POST',
@@ -34,7 +33,7 @@ usernameButton.onclick = async function() {
             response = await fetch('/users/', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username: username, password: 'password'})
+                body: JSON.stringify({username: username, password: enteredPassword})
             });
 
             if (response.ok) {
