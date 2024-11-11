@@ -3,8 +3,11 @@ import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from . import redis_client
+from . import redis_client, models
 from .websocket_manager import manager
+from .database import engine
+
+models.Base.metadata.create_all(bind=engine)
 
 # Configure logging to track events and errors
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +17,8 @@ app = FastAPI()
 
 # Construct absolute path to the frontend directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "..", "..", "frontend")
+FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
+FRONTEND_DIR = os.path.abspath(FRONTEND_DIR)  # Ensure it's an absolute path
 
 # Mount the frontend static files to serve them via FastAPI
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")

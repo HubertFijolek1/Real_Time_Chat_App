@@ -1,5 +1,6 @@
 import redis
 from dotenv import load_dotenv
+from .database import Base, engine, SessionLocal
 import os
 
 # Load environment variables from the .env file
