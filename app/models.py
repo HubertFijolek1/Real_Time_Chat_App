@@ -55,6 +55,8 @@ class Message(Base):
 
     user = relationship("User", back_populates="messages")
     chat_room = relationship("ChatRoom", back_populates="messages")
+    read_statuses = relationship("MessageReadStatus", back_populates="message")
+
 
 class MessageReadStatus(Base):
     __tablename__ = 'message_read_status'
