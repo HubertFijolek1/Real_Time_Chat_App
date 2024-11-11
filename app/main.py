@@ -129,6 +129,22 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                     "type": "typing",
                     "username": current_user.username
                 }, chat_room_id)
+            elif message_type == "reaction":
+                reaction_type = data.get("reaction_type")
+                message_id = data.get("message_id")
+                reaction = models.Reaction(
+                    user_id=current_user.id,
+                    message_id=message_id,
+                    reaction_type=reaction_type
+                )
+                db.merge(reaction)  # Use merge to handle upserts
+                db.commit()
+                await manager.broadcast({
+                    "type": "reaction",
+                    "message_id": message_id,
+                    "reaction_type": reaction_type,
+                    "username": current_user.username
+                }, chat_room_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         logger.info(f"{current_user.username} disconnected")
