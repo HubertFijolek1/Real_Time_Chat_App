@@ -11,16 +11,18 @@ from fastapi import (
     UploadFile,
     File,
 )
+from fastapi.responses import FileResponse , HTMLResponse
+from fastapi.staticfiles import StaticFiles  # Import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 import asyncio
+import json
 
 from fastapi.security import OAuth2PasswordRequestForm
 from . import models, schemas
 from .database import SessionLocal, engine
 from .auth import authenticate_user, create_access_token, get_current_user
-from . import redis_client, init_redis_pool
-import json
+import redis.asyncio as redis
 
 
 
@@ -31,14 +33,45 @@ logger = logging.getLogger(__name__)
 # Create the FastAPI app
 app = FastAPI()
 
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+
+@app.get("/", response_class=HTMLResponse)
+async def read_index():
+    return FileResponse("frontend/index.html")
+
+
+# app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+
 @app.on_event("startup")
 async def startup():
-    await init_redis_pool()
+    # Initialize Redis client
+    redis_host = os.getenv("REDIS_HOST", "localhost")
+    redis_port = int(os.getenv("REDIS_PORT", 6379))
+    app.state.redis_client = redis.Redis(
+        host=redis_host,
+        port=redis_port,
+        db=0,
+        encoding='utf-8',
+        decode_responses=True,
+    )
     models.Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        general_chat_room = db.query(models.ChatRoom).filter(models.ChatRoom.name == 'General').first()
+        if not general_chat_room:
+            general_chat_room = models.ChatRoom(name='General', is_private=False)
+            db.add(general_chat_room)
+            db.commit()
+    finally:
+        db.close()
 
 @app.on_event("shutdown")
 async def shutdown():
-    await redis_client.close()
+    if app.state.redis_client:
+        await app.state.redis_client.close()
+
 
 # Dependency to get DB session
 def get_db():
@@ -48,7 +81,9 @@ def get_db():
     finally:
         db.close()
 
+
 # User registration endpoint
+
 @app.post("/users/", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.username == user.username).first()
@@ -112,6 +147,13 @@ def join_chat_room(
     db.commit()
     return {"message": "Joined chat room successfully"}
 
+@app.get("/chat_rooms/", response_model=List[schemas.ChatRoom])
+def list_chat_rooms(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return db.query(models.ChatRoom).all()
+
 # Endpoint to search messages
 @app.get("/chat_rooms/{chat_room_id}/search", response_model=List[schemas.Message])
 def search_messages(
@@ -174,6 +216,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
             await websocket.close(code=1008, reason="Not a member of the chat room")
             return
 
+        # Use Redis client from app.state
+        redis_client = app.state.redis_client
+
         # Subscribe to Redis channel
         redis_channel = f"chat_room_{chat_room_id}"
         pubsub = redis_client.pubsub()
@@ -211,11 +256,11 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                     "message_id": message.id,
                 }
                 # Publish the message to Redis
-                await redis.publish_json(redis_channel, msg)
+                await redis_client.publish(redis_channel, json.dumps(msg))
             elif message_type == "typing":
                 # Broadcast typing indicator
                 msg = {"type": "typing", "username": current_user.username}
-                await redis.publish_json(redis_channel, msg)
+                await redis_client.publish(redis_channel, json.dumps(msg))
             elif message_type == "reaction":
                 # Handle reactions
                 reaction_type = data.get("reaction_type")
@@ -231,7 +276,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                     "reaction_type": reaction_type,
                     "username": current_user.username,
                 }
-                await redis.publish_json(redis_channel, msg)
+                await redis_client.publish(redis_channel, json.dumps(msg))
             elif message_type == "read_receipt":
                 # Handle read receipts
                 message_id = data.get("message_id")
@@ -244,7 +289,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
             # Add handling for other message types if needed
     except WebSocketDisconnect:
         send_task.cancel()
-        await redis.unsubscribe(redis_channel)
+        await pubsub.unsubscribe(redis_channel)
         print(f"Client disconnected")
     except Exception as e:
         logger.error(f"Error: {e}")

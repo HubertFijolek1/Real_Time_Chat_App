@@ -29,7 +29,7 @@ class ChatRoom(ChatRoomBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class MessageBase(BaseModel):
     content: str
@@ -45,7 +45,7 @@ class Message(MessageBase):
     chat_room_id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class ReactionBase(BaseModel):
     reaction_type: str
@@ -58,7 +58,7 @@ class Reaction(ReactionBase):
     message_id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class MessageReadStatusBase(BaseModel):
     read_at: datetime
@@ -71,4 +71,4 @@ class MessageReadStatus(MessageReadStatusBase):
     message_id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
