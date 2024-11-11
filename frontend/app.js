@@ -67,6 +67,7 @@ usernameButton.onclick = async function() {
                 if (data.type === "chat") {
                     const msg = document.createElement("div");
                     msg.classList.add("message");
+
                     if (data.is_attachment) {
                         const text = document.createElement("span");
                         text.textContent = `${data.username} sent a file: `;
@@ -81,6 +82,11 @@ usernameButton.onclick = async function() {
                     }
                     messages.appendChild(msg);
                     messages.scrollTop = messages.scrollHeight;
+                    ws.send(JSON.stringify({
+                    type: "read_receipt",
+                    message_id: data.message_id,
+                    chat_room_id: currentChatRoomId
+                    }));
                 }
                 // Handle other message types
             };
