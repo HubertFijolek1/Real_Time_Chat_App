@@ -1,11 +1,13 @@
 import os
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect,Depends, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
-from . import redis_client, models
+from . import redis_client, models,schemas
 from .websocket_manager import manager
-from .database import engine
+from .database import engine,SessionLocal
+from sqlalchemy.orm import Session
+
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -14,6 +16,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Dependency to get DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 # Construct absolute path to the frontend directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -85,3 +96,16 @@ async def websocket_endpoint(websocket: WebSocket):
         # Handle unexpected exceptions
         logger.error(f"Unexpected error: {e}")
         manager.disconnect(websocket)
+
+
+@app.post("/users/", response_model=schemas.User)
+def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    new_user = models.User(username=user.username)
+    new_user.set_password(user.password)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
