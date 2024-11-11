@@ -1,38 +1,24 @@
 from fastapi import WebSocket
 from typing import List, Dict
+from collections import defaultdict
 
 class ConnectionManager:
-    """
-    Manages active WebSocket connections and facilitates message broadcasting.
-    """
-
     def __init__(self):
         self.active_connections: Dict[WebSocket, str] = {}
+        self.chat_rooms: defaultdict = defaultdict(set)
 
-    async def connect(self, websocket: WebSocket, username: str):
+    async def connect(self, websocket: WebSocket, username: str, chat_room_id: int):
         self.active_connections[websocket] = username
+        self.chat_rooms[chat_room_id].add(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.pop(websocket, None)
+        username = self.active_connections.pop(websocket, None)
+        for chat_room in self.chat_rooms.values():
+            chat_room.discard(websocket)
 
-    async def broadcast(self, message: str):
-        """
-        Send a message to all active WebSocket connections.
-
-        Args:
-            message (str): The message to broadcast.
-        """
-        to_remove = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(message)
-            except Exception as e:
-                # Log the error and mark the connection for removal
-                print(f"Error sending message: {e}")
-                to_remove.append(connection)
-        # Remove any connections that encountered errors
-        for connection in to_remove:
-            self.disconnect(connection)
+    async def broadcast(self, message: str, chat_room_id: int):
+        for connection in self.chat_rooms[chat_room_id]:
+            await connection.send_text(message)
 
 # Instantiate a single ConnectionManager to be used across the application
 manager = ConnectionManager()

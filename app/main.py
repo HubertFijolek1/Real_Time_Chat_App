@@ -51,21 +51,25 @@ def read_root():
         logger.error(f"Index file not found at {index_file}")
         return HTMLResponse(content="Index file not found.", status_code=404)
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+@app.websocket("/ws/{chat_room_id}")
+async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str = Query(...)):
     await websocket.accept()
     try:
         db = SessionLocal()
         current_user = await get_current_user(token=token, db=db)
-        await manager.connect(websocket, current_user.username)
+        # Check if user is a member of the chat room
+        membership = db.query(models.Membership).filter_by(user_id=current_user.id, chat_room_id=chat_room_id).first()
+        if not membership:
+            await websocket.close()
+            return
+        await manager.connect(websocket, current_user.username, chat_room_id)
         while True:
             data = await websocket.receive_json()
             content = data.get("content")
-            chat_room_id = data.get("chat_room_id")
             message = models.Message(content=content, user_id=current_user.id, chat_room_id=chat_room_id)
             db.add(message)
             db.commit()
-            await manager.broadcast(message.content, chat_room_id)
+            await manager.broadcast(f"{current_user.username}: {content}", chat_room_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
