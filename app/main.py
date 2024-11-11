@@ -1,13 +1,14 @@
 import os
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect,Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect,Depends, HTTPException, status,Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from .auth import authenticate_user, create_access_token, get_current_user
 from . import redis_client, models,schemas
 from .websocket_manager import manager
 from .database import engine,SessionLocal
 from sqlalchemy.orm import Session
-
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -51,51 +52,17 @@ def read_root():
         return HTMLResponse(content="Index file not found.", status_code=404)
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """
-    Handle WebSocket connections for real-time chat.
-
-    Args:
-        websocket (WebSocket): The WebSocket connection instance.
-
-    Handles:
-        - Connection acceptance
-        - Sending last 50 messages from Redis
-        - Receiving and broadcasting new messages
-        - Graceful disconnection handling
-    """
-    await manager.connect(websocket)
-    logger.info("Client connected")
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
+    await websocket.accept()
     try:
-        # Retrieve and send the last 50 chat messages from Redis
-        messages = redis_client.lrange("chat_messages", -50, -1)
-        for message in messages:
-            await websocket.send_text(message)
-
-        while True:
-            # Receive a new message from the client
-            data = await websocket.receive_text()
-            if not data.strip():
-                # Inform the client about empty messages
-                await websocket.send_text("Error: Empty messages are not allowed.")
-                continue
-
-            logger.info(f"Received message: {data}")
-            # Store the message in Redis
-            redis_client.rpush("chat_messages", data)
-            # Trim the list to the last 50 messages
-            redis_client.ltrim("chat_messages", -50, -1)
-            # Broadcast the message to all connected clients
-            await manager.broadcast(data)
+        db = SessionLocal()
+        current_user = await get_current_user(token=token, db=db)
+        await manager.connect(websocket, current_user.username)
+        # Rest of the code...
     except WebSocketDisconnect:
-        # Handle client disconnection
         manager.disconnect(websocket)
-        logger.info("Client disconnected")
-        await manager.broadcast("A user has left the chat.")
     except Exception as e:
-        # Handle unexpected exceptions
-        logger.error(f"Unexpected error: {e}")
-        manager.disconnect(websocket)
+        await websocket.close()
 
 
 @app.post("/users/", response_model=schemas.User)
@@ -109,3 +76,11 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     return new_user
+
+@app.post("/token", response_model=schemas.Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
