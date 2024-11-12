@@ -257,6 +257,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
                 }
                 # Publish the message to Redis
                 await redis_client.publish(redis_channel, json.dumps(msg))
+                # Send the message back to the sender
+                await websocket.send_json(msg)
             elif message_type == "typing":
                 # Broadcast typing indicator
                 msg = {"type": "typing", "username": current_user.username}
@@ -290,9 +292,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_room_id: int, token: str
     except WebSocketDisconnect:
         send_task.cancel()
         await pubsub.unsubscribe(redis_channel)
-        print(f"Client disconnected")
+        logger.info(f"Client disconnected: {current_user.username}")
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error in WebSocket connection: {e}", exc_info=True)
         await websocket.close()
+
     finally:
         db.close()
