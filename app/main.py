@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from typing import List
 import asyncio
 import json
+from starlette.datastructures import State
 
 from fastapi.security import OAuth2PasswordRequestForm
 from . import models, schemas
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Create the FastAPI app
 app = FastAPI()
+app.state: State = State()
 
 app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
@@ -191,19 +193,35 @@ def delete_message(
 # File upload endpoint
 @app.post("/upload/")
 async def upload_file(
-    file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)
+        file: UploadFile = File(...),
+        current_user: models.User = Depends(get_current_user),
 ):
-    # Validate file size and type
+    # Validate file type
     if file.content_type not in ["image/png", "image/jpeg", "application/pdf"]:
         raise HTTPException(status_code=400, detail="Unsupported file type")
-    if file.spool_max_size > 10 * 1024 * 1024:  # Limit to 10MB
-        raise HTTPException(status_code=400, detail="File too large")
-    # Sanitize file name
+
+    # Set maximum file size (e.g., 10 MB)
+    max_file_size = 10 * 1024 * 1024  # 10 MB in bytes
+
+    # Read the file in chunks to avoid loading the entire file into memory
+    file_size = 0
+    contents = bytearray()
+    while True:
+        chunk = await file.read(1024)  # Read in 1 KB chunks
+        if not chunk:
+            break
+        file_size += len(chunk)
+        if file_size > max_file_size:
+            raise HTTPException(status_code=400, detail="File too large")
+        contents.extend(chunk)
+
+    # Save the file
     filename = os.path.basename(file.filename)
     file_location = f"uploads/{filename}"
     os.makedirs(os.path.dirname(file_location), exist_ok=True)
     with open(file_location, "wb") as buffer:
-        buffer.write(await file.read())
+        buffer.write(contents)
+
     return {"file_url": f"/{file_location}"}
 
 
