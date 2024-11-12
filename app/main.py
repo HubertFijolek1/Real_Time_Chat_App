@@ -193,11 +193,19 @@ def delete_message(
 async def upload_file(
     file: UploadFile = File(...), current_user: models.User = Depends(get_current_user)
 ):
-    file_location = f"uploads/{file.filename}"
+    # Validate file size and type
+    if file.content_type not in ["image/png", "image/jpeg", "application/pdf"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    if file.spool_max_size > 10 * 1024 * 1024:  # Limit to 10MB
+        raise HTTPException(status_code=400, detail="File too large")
+    # Sanitize file name
+    filename = os.path.basename(file.filename)
+    file_location = f"uploads/{filename}"
     os.makedirs(os.path.dirname(file_location), exist_ok=True)
     with open(file_location, "wb") as buffer:
         buffer.write(await file.read())
     return {"file_url": f"/{file_location}"}
+
 
 # WebSocket endpoint
 @app.websocket("/ws/{chat_room_id}")
